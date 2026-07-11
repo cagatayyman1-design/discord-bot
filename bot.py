@@ -45,105 +45,52 @@ async def on_ready():
     print('-----------------------------------------', flush=True)
     print(f'> Discord botu DND modunda aktif: {bot.user}', flush=True)
     print('> Firebase bulut baglantisi basarili!', flush=True)
+    try:
+        synced = await bot.tree.sync()
+        print(f'> Slash komutlari senkronize edildi ({len(synced)} komut).', flush=True)
+    except Exception as e:
+        print(f'> Slash komutlari senkronize edilirken hata olustu: {e}', flush=True)
     print('-----------------------------------------', flush=True)
-
-@bot.command()
-async def onayla(ctx, username: str):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Yetkiniz yok!")
-        return
-
-    clean_username = "".join(c for c in username if c.isalnum()).lower()
-    try:
-        ref = db.reference(f'users/{clean_username}')
-        user_data = ref.get()
-        if not user_data:
-            await ctx.send(f"❌ '{username}' adlı bir kullanıcı bulunamadı! Lütfen önce uygulamadan kayıt olsun.")
-            return
-            
-        ref.update({
-            'license_expiry': 'unlimited'
-        })
-        await ctx.send(f"✅ Başarılı! `{username}` hesabı için **Sınırsız** lisans tanımlandı.", delete_after=10)
-        
-        # Kanalı temizle (Sabitli mesajlar hariç)
-        await ctx.channel.purge(check=lambda m: not m.pinned, limit=100)
-    except Exception as e:
-        await ctx.send(f"❌ Veritabanı Hatası: {e}")
-
-@bot.command()
-async def sureli(ctx, username: str, gun: int):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Yetkiniz yok!")
-        return
-
-    clean_username = "".join(c for c in username if c.isalnum()).lower()
-    try:
-        ref = db.reference(f'users/{clean_username}')
-        user_data = ref.get()
-        if not user_data:
-            await ctx.send(f"❌ '{username}' adlı bir kullanıcı bulunamadı! Lütfen önce uygulamadan kayıt olsun.")
-            return
-
-        current_expiry = user_data.get('license_expiry', 'none')
-        start_date = datetime.now()
-        if current_expiry != "none" and current_expiry != "unlimited":
-            try:
-                existing_end = datetime.strptime(current_expiry, '%Y-%m-%d')
-                if existing_end > start_date:
-                    start_date = existing_end
-            except: pass
-            
-        bitis_tarihi = (start_date + timedelta(days=gun)).strftime('%Y-%m-%d')
-        ref.update({
-            'license_expiry': bitis_tarihi
-        })
-        await ctx.send(f"✅ Başarılı! `{username}` hesabına **{gun} günlük** ek lisans tanımlandı. (Bitiş: {bitis_tarihi})", delete_after=10)
-        
-        # Kanalı temizle (Sabitli mesajlar hariç)
-        await ctx.channel.purge(check=lambda m: not m.pinned, limit=100)
-    except Exception as e:
-        await ctx.send(f"❌ Veritabanı Hatası: {e}")
-
-@bot.command()
-async def sil(ctx, username: str):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Yetkiniz yok!")
-        return
-        
-    clean_username = "".join(c for c in username if c.isalnum()).lower()
-    try:
-        ref = db.reference(f'users/{clean_username}')
-        user_data = ref.get()
-        if not user_data:
-            await ctx.send(f"❌ '{username}' adlı bir kullanıcı bulunamadı!")
-            return
-            
-        ref.update({
-            'license_expiry': 'none'
-        })
-        await ctx.send(f"🗑️ `{username}` hesabının lisansı iptal edildi.")
-    except Exception as e:
-        await ctx.send(f"❌ Veritabanı Hatası: {e}")
 
 import random
 import string
+from discord import app_commands
 
-@bot.command()
-async def key_olustur(ctx, gun: int = 30, adet: int = 1):
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Yetkiniz yok!")
+@bot.tree.command(name="key", description="Yeni bir lisans anahtarı oluşturur.")
+@app_commands.describe(
+    sure="Lisans süresi: Gün sayısını yazın (Örn: 30) veya 'sinirsiz' yazın.",
+    adet="Kaç adet anahtar üretileceği (Varsayılan: 1)"
+)
+async def key_slash(interaction: discord.Interaction, sure: str, adet: int = 1):
+    if not interaction.user.guild_permissions.administrator:
+        await interaction.response.send_message("❌ Yetkiniz yok!", ephemeral=True)
         return
 
     if adet > 20:
-        await ctx.send("❌ Bir seferde en fazla 20 anahtar oluşturabilirsiniz.")
+        await interaction.response.send_message("❌ Bir seferde en fazla 20 anahtar oluşturabilirsiniz.", ephemeral=True)
         return
 
     try:
         keys_generated = []
+        sure_lower = sure.lower().replace("ı", "i")
+        is_unlimited = (sure_lower == "sinirsiz")
+        
+        if not is_unlimited:
+            try:
+                gun = int(sure)
+            except ValueError:
+                await interaction.response.send_message("❌ Süre hatalı! Lütfen sadece sayı (Örn: 30) veya 'sinirsiz' yazın.", ephemeral=True)
+                return
+        else:
+            gun = "unlimited"
+
         for _ in range(adet):
-            # Format: XXXX-XXXX-XXXX
-            key_parts = [''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3)]
+            if is_unlimited:
+                # Format: XXXX-XXXX-XXXX-XXXX (4'lü)
+                key_parts = [''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(4)]
+            else:
+                # Format: XXXX-XXXX-XXXX (3'lü)
+                key_parts = [''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(3)]
             new_key = "-".join(key_parts)
             
             ref = db.reference(f'keys/{new_key}')
@@ -151,141 +98,17 @@ async def key_olustur(ctx, gun: int = 30, adet: int = 1):
                 'days': gun,
                 'used': False,
                 'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'created_by': str(ctx.author)
+                'created_by': str(interaction.user)
             })
             keys_generated.append(new_key)
             
         keys_str = "\n".join([f"`{k}`" for k in keys_generated])
-        await ctx.author.send(f"✅ **{adet} Adet {gun} Günlük Lisans Anahtarı Oluşturuldu:**\n\n{keys_str}")
-        await ctx.send("✅ Anahtarlar oluşturuldu ve size Özel Mesaj (DM) olarak gönderildi.")
+        sure_text = "♾️ SINIRSIZ" if is_unlimited else f"{gun} Günlük"
+        
+        await interaction.user.send(f"✅ **{adet} Adet {sure_text} Lisans Anahtarı Oluşturuldu:**\n\n{keys_str}")
+        await interaction.response.send_message("✅ Anahtarlar oluşturuldu ve size Özel Mesaj (DM) olarak gönderildi.", ephemeral=True)
     except Exception as e:
-        await ctx.send(f"❌ Veritabanı Hatası: {e}")
-
-@bot.command()
-async def key_olustur_unlimited(ctx, adet: int = 1):
-    """Sınırsız süreli lisans anahtarı oluşturur. !key_olustur_unlimited [adet]"""
-    if not ctx.author.guild_permissions.administrator:
-        await ctx.send("❌ Yetkiniz yok!")
-        return
-
-    if adet > 20:
-        await ctx.send("❌ Bir seferde en fazla 20 anahtar oluşturabilirsiniz.")
-        return
-
-    try:
-        keys_generated = []
-        for _ in range(adet):
-            # Format: XXXX-XXXX-XXXX-XXXX (4'lü - daha premium görünüm)
-            key_parts = [''.join(random.choices(string.ascii_uppercase + string.digits, k=4)) for _ in range(4)]
-            new_key = "-".join(key_parts)
-            
-            ref = db.reference(f'keys/{new_key}')
-            ref.set({
-                'days': 'unlimited',
-                'used': False,
-                'created_at': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
-                'created_by': str(ctx.author)
-            })
-            keys_generated.append(new_key)
-            
-        keys_str = "\n".join([f"`{k}`" for k in keys_generated])
-        await ctx.author.send(f"✅ **{adet} Adet ♾️ SINIRSIIZ Lisans Anahtarı Oluşturuldu:**\n\n{keys_str}")
-        await ctx.send("✅ Sınırsız anahtarlar oluşturuldu ve size Özel Mesaj (DM) olarak gönderildi.")
-    except Exception as e:
-        await ctx.send(f"❌ Veritabanı Hatası: {e}")
-
-
-
-@bot.command()
-@commands.has_permissions(ban_members=True)
-async def ban(ctx, member: discord.Member, *, sebep: str = "Belirtilmedi"):
-    await member.ban(reason=sebep)
-    await ctx.send(f"🔨 **{member.name}** sunucudan yasaklandı! Sebep: {sebep}")
-
-@bot.command()
-@commands.has_permissions(kick_members=True)
-async def kick(ctx, member: discord.Member, *, sebep: str = "Belirtilmedi"):
-    await member.kick(reason=sebep)
-    await ctx.send(f"👢 **{member.name}** sunucudan atıldı! Sebep: {sebep}")
-
-@bot.command()
-@commands.has_permissions(moderate_members=True)
-async def timeout(ctx, member: discord.Member, sure_dakika: int = 720, *, sebep: str = "Belirtilmedi"):
-    # Varsayılan 720 dakika = 12 saat
-    duration = timedelta(minutes=sure_dakika)
-    await member.timeout(duration, reason=sebep)
-    await ctx.send(f"🔇 **{member.name}**, {sure_dakika} dakika boyunca susturuldu! Sebep: {sebep}")
-
-@bot.command()
-@commands.has_permissions(moderate_members=True)
-async def unmute(ctx, member: discord.Member):
-    await member.timeout(None)
-    await ctx.send(f"🔊 **{member.name}** susturması kaldırıldı!")
-
-@bot.command()
-@commands.has_permissions(manage_messages=True)
-async def temizle(ctx, sayi: int):
-    await ctx.channel.purge(limit=sayi + 1)
-    await ctx.send(f"🧹 **{sayi}** adet mesaj temizlendi!", delete_after=5)
-
-@bot.command()
-@commands.has_permissions(manage_channels=True)
-async def slowmode(ctx, saniye: int):
-    await ctx.channel.edit(slowmode_delay=saniye)
-    await ctx.send(f"⏳ Kanal yavaş modu **{saniye} saniye** olarak ayarlandı.")
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def nuke(ctx):
-    pos = ctx.channel.position
-    new_channel = await ctx.channel.clone()
-    await ctx.channel.delete()
-    await new_channel.edit(position=pos)
-    await new_channel.send("💥 Kanal başarıyla sıfırlandı! (Nuked)")
-
-@bot.command()
-async def userinfo(ctx, member: discord.Member = None):
-    member = member or ctx.author
-    roles = [role.name for role in member.roles[1:]] # @everyone haricindeki roller
-    embed = discord.Embed(title=f"Kullanıcı Bilgisi: {member.name}", color=discord.Color.blue())
-    embed.add_field(name="ID", value=member.id, inline=True)
-    embed.add_field(name="Sunucuya Katılım", value=member.joined_at.strftime("%d/%m/%Y"), inline=True)
-    embed.add_field(name="Roller", value=", ".join(roles) if roles else "Yok", inline=False)
-    await ctx.send(embed=embed)
-
-@bot.command()
-@commands.has_permissions(administrator=True)
-async def setup_onay(ctx):
-    # Kullanıcının istediği özel mesaj içeriği
-    mesaj_icerigi = (
-        "**CHARON PROJECT** yazılımını kullanabilmek için uygulamadan **Kayıt Ol** ekranından ücretsiz hesap oluşturmalısınız.\n\n"
-        "Hesabınızı oluşturduktan sonra, satın aldığınız lisans anahtarını **Lisans Etkinleştir (Kod Kullan)** "
-        "bölümüne girerek hesabınızı aktif edebilirsiniz.\n\n"
-        "Lisans anahtarı satın almak için sitemizi ziyaret edebilir veya destek talebi oluşturabilirsiniz."
-    )
-    
-    embed = discord.Embed(
-        title="🚀 CHARON PROJECT - KAYIT VE ONAY REHBERİ",
-        description=mesaj_icerigi,
-        color=discord.Color.blue()
-    )
-    embed.set_footer(text="Charon Project Yetkili Sistemi")
-    
-    # Yerel logo dosyasını yükleyip thumbnail olarak ayarla
-    logo_path = "../gui/web/logo.png"
-    if os.path.exists(logo_path):
-        file = discord.File(logo_path, filename="logo.png")
-        embed.set_thumbnail(url="attachment://logo.png")
-        msg = await ctx.send(file=file, embed=embed)
-    else:
-        msg = await ctx.send(embed=embed)
-    
-    try:
-        await msg.pin()
-        await ctx.message.delete()
-        await ctx.send("✅ Kurulum mesajı logo ile birlikte gönderildi ve sabitlendi!", delete_after=3)
-    except Exception as e:
-        await ctx.send(f"⚠️ Mesaj gönderildi ama sabitlenemedi (Yetki hatası olabilir): {e}")
+        await interaction.response.send_message(f"❌ Veritabanı Hatası: {e}", ephemeral=True)
 
 # TOKEN bilgisini .env dosyasından al
 TOKEN = os.getenv("DISCORD_TOKEN")
