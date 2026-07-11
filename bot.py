@@ -37,7 +37,7 @@ firebase_admin.initialize_app(cred, {
 
 intents = discord.Intents.default()
 intents.message_content = True
-activity = discord.Game(name="Charon Project")
+activity = discord.Game(name="Rival Clicker")
 bot = commands.Bot(command_prefix='!', intents=intents, activity=activity, status=discord.Status.dnd)
 
 @bot.event
@@ -109,6 +109,7 @@ async def key_slash(interaction: discord.Interaction, sure: str, adet: int = 1):
         await interaction.response.send_message("✅ Anahtarlar oluşturuldu ve size Özel Mesaj (DM) olarak gönderildi.", ephemeral=True)
     except Exception as e:
         await interaction.response.send_message(f"❌ Veritabanı Hatası: {e}", ephemeral=True)
+
 
 # TOKEN bilgisini .env dosyasından al
 TOKEN = os.getenv("DISCORD_TOKEN")
