@@ -103,6 +103,20 @@ async def send_log(guild: discord.Guild, embed: discord.Embed):
 
 
 async def log_action(guild: discord.Guild, action: str, target: discord.abc.User, moderator: discord.abc.User, reason: str):
+    embed = discord.Embed(
+        title=f"\U0001f6e1\ufe0f {action}",
+        colour=discord.Colour.orange(),
+        timestamp=datetime.now(timezone.utc),
+    )
+    guild_icon = guild.icon.url if guild.icon else None
+    embed.set_author(name=f"Moderasyon Kaydi | {guild.name}", icon_url=guild_icon)
+    embed.set_thumbnail(url=target.display_avatar.url)
+    embed.add_field(name="\U0001f464 Uye", value=f"{target.mention}\n`{target.id}`", inline=True)
+    embed.add_field(name="\U0001f6e1\ufe0f Yetkili", value=moderator.mention, inline=True)
+    embed.add_field(name="\U0001f4dd Sebep", value=reason[:1024], inline=False)
+    embed.set_footer(text="Moderasyon gunlugu")
+    await send_log(guild, embed)
+    return
     embed = discord.Embed(title=f"🛡️ Moderasyon: {action}", colour=discord.Colour.orange(), timestamp=datetime.now(timezone.utc))
     embed.add_field(name="Üye", value=f"{target.mention} (`{target.id}`)", inline=False)
     embed.add_field(name="Yetkili", value=f"{moderator.mention}", inline=True)
@@ -112,6 +126,24 @@ async def log_action(guild: discord.Guild, action: str, target: discord.abc.User
 
 @bot.event
 async def on_voice_state_update(member: discord.Member, before: discord.VoiceState, after: discord.VoiceState):
+    if member.bot or before.channel == after.channel:
+        return
+    if before.channel is None:
+        action, detail = "Sesliye katildi", after.channel.mention
+    elif after.channel is None:
+        action, detail = "Sesliden ayrildi", before.channel.mention
+    else:
+        action, detail = "Sesli kanal degistirdi", f"{before.channel.mention} -> {after.channel.mention}"
+    colour = discord.Colour.green() if before.channel is None else discord.Colour.red() if after.channel is None else discord.Colour.blurple()
+    embed = discord.Embed(title=f"\U0001f50a {action}", colour=colour, timestamp=datetime.now(timezone.utc))
+    guild_icon = member.guild.icon.url if member.guild.icon else None
+    embed.set_author(name=f"Ses Kaydi | {member.guild.name}", icon_url=guild_icon)
+    embed.set_thumbnail(url=member.display_avatar.url)
+    embed.add_field(name="\U0001f464 Uye", value=f"{member.mention}\n`{member.id}`", inline=True)
+    embed.add_field(name="\U0001f50a Kanal", value=detail, inline=True)
+    embed.set_footer(text="Sesli kanal gunlugu")
+    await send_log(member.guild, embed)
+    return
     """Yalnızca sesli kanala katılma, ayrılma ve kanal değiştirme olaylarını kaydeder."""
     if member.bot or before.channel == after.channel:
         return
